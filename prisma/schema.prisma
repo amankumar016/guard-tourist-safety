@@ -1,0 +1,293 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  GUEST
+  TOURIST
+  GUIDE_VERIFIED
+  RESPONDER
+  ADMIN
+}
+
+enum IncidentType {
+  SOS
+  SILENT_ALARM
+  WATCH_ME
+}
+
+enum IncidentStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CANCELLED
+}
+
+enum AdvisoryType {
+  WEATHER
+  TERRAIN
+  CULTURE
+}
+
+enum ScamLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum ServiceType {
+  TAXI
+  GUIDE
+  TICKETS
+  FOOD
+  HOTEL
+  TRANSIT
+  OTHER
+}
+
+enum VaultDocType {
+  PASSPORT
+  VISA
+  BOOKING
+  TICKET
+  INSURANCE
+  OTHER
+}
+
+enum PartnerType {
+  HOTEL
+  TELECOM
+  HOSPITAL
+  TOUR_OPERATOR
+}
+
+enum InsuranceStatus {
+  DRAFT
+  SUBMITTED
+  ACKNOWLEDGED
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id                 String   @id @default(cuid())
+  email              String   @unique
+  passwordHash       String
+  role               Role     @default(TOURIST)
+  displayName        String?
+  phone              String?
+  emergencyContacts  Json?
+  consentAudio       Boolean  @default(false)
+  consentEvidence    Boolean  @default(false)
+  consentBlockchain  Boolean  @default(false)
+  homeRegionId       String?
+  homeRegion         Region?  @relation(fields: [homeRegionId], references: [id])
+  guideProfile       GuideProfile?
+  incidents          IncidentReport[]
+  sosRequests        SOSRequest[]
+  trustNotes         TrustNote[]
+  vault              DocumentVaultEntry[]
+  offlinePacks       OfflinePack[]
+  insuranceClaims    InsuranceClaim[]
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model GuideProfile {
+  id            String  @id @default(cuid())
+  userId        String  @unique
+  user          User    @relation(fields: [userId], references: [id])
+  verified      Boolean @default(false)
+  documents     Json?
+  bio           String?
+  languages     String[] // ISO codes
+  serviceRegionIds String[]
+  trustScore    Float   @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Region {
+  id         String  @id @default(cuid())
+  name       String
+  country    String
+  timezone   String?
+  boundary   Unsupported("geometry(MultiPolygon,4326)")?
+  safeZones  SafeZone[]
+  trustNotes TrustNote[]
+  advisories Advisory[]
+  scamAlerts ScamAlert[]
+  priceList  PriceListEntry[]
+  partners   PartnerRegion[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model SafeZone {
+  id        String @id @default(cuid())
+  regionId  String
+  region    Region @relation(fields: [regionId], references: [id])
+  name      String
+  location  Unsupported("geometry(Point,4326)")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model IncidentReport {
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id])
+  regionId    String?
+  region      Region?       @relation(fields: [regionId], references: [id])
+  type        IncidentType
+  status      IncidentStatus @default(OPEN)
+  location    Unsupported("geometry(Point,4326)")?
+  description String?
+  startedAt   DateTime       @default(now())
+  resolvedAt  DateTime?
+  evidence    EvidencePackage?
+  sosRequests SOSRequest[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model SOSRequest {
+  id           String        @id @default(cuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id])
+  incidentId   String?
+  incident     IncidentReport? @relation(fields: [incidentId], references: [id])
+  type         IncidentType
+  status       IncidentStatus @default(OPEN)
+  createdAt    DateTime       @default(now())
+  notified     Boolean        @default(false)
+}
+
+model EvidencePackage {
+  id            String  @id @default(cuid())
+  incidentId    String  @unique
+  incident      IncidentReport @relation(fields: [incidentId], references: [id])
+  s3Key         String?
+  audioS3Key    String?
+  wifiScan      Json?
+  sensors       Json?
+  immutableHash String?
+  anchoredTxId  String?
+  anchoredAt    DateTime?
+  createdAt     DateTime @default(now())
+}
+
+model TrustNote {
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  regionId  String
+  region    Region  @relation(fields: [regionId], references: [id])
+  note      String
+  location  Unsupported("geometry(Point,4326)")?
+  createdAt DateTime @default(now())
+}
+
+model TrustScore {
+  id          String @id @default(cuid())
+  subjectType String
+  subjectId   String
+  score       Float
+  source      String?
+  createdAt   DateTime @default(now())
+}
+
+model Advisory {
+  id          String       @id @default(cuid())
+  regionId    String
+  region      Region       @relation(fields: [regionId], references: [id])
+  type        AdvisoryType
+  data        Json
+  effectiveFrom DateTime
+  effectiveTo DateTime?
+  createdAt   DateTime @default(now())
+}
+
+model ScamAlert {
+  id          String @id @default(cuid())
+  regionId    String
+  region      Region @relation(fields: [regionId], references: [id])
+  hotspot     Unsupported("geometry(Polygon,4326)")?
+  level       ScamLevel
+  description String?
+  createdAt   DateTime @default(now())
+}
+
+model InsuranceClaim {
+  id          String @id @default(cuid())
+  userId      String
+  user        User   @relation(fields: [userId], references: [id])
+  incidentId  String?
+  incident    IncidentReport? @relation(fields: [incidentId], references: [id])
+  provider    String?
+  status      InsuranceStatus @default(DRAFT)
+  submittedAt DateTime?
+  response    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model DocumentVaultEntry {
+  id        String @id @default(cuid())
+  userId    String
+  user      User   @relation(fields: [userId], references: [id])
+  type      VaultDocType
+  filename  String
+  s3Key     String
+  encrypted Boolean @default(true)
+  createdAt DateTime @default(now())
+}
+
+model OfflinePack {
+  id        String @id @default(cuid())
+  userId    String
+  user      User   @relation(fields: [userId], references: [id])
+  regionId  String
+  region    Region @relation(fields: [regionId], references: [id])
+  s3Key     String
+  sizeBytes Int
+  createdAt DateTime @default(now())
+}
+
+model PriceListEntry {
+  id         String      @id @default(cuid())
+  regionId   String
+  region     Region      @relation(fields: [regionId], references: [id])
+  service    ServiceType
+  item       String
+  priceMin   Decimal
+  priceMax   Decimal
+  currency   String
+  verifiedBy String?
+  createdAt  DateTime @default(now())
+}
+
+model Partner {
+  id        String      @id @default(cuid())
+  type      PartnerType
+  name      String
+  contact   Json?
+  webhook   String?
+  regions   PartnerRegion[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PartnerRegion {
+  id        String @id @default(cuid())
+  partnerId String
+  regionId  String
+  partner   Partner @relation(fields: [partnerId], references: [id])
+  region    Region  @relation(fields: [regionId], references: [id])
+  @@unique([partnerId, regionId])
+}
